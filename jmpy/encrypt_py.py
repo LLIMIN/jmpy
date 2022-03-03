@@ -9,6 +9,7 @@ Created on 2018-07-18 18:24
 import os
 import re
 import shutil
+import platform
 import tempfile
 from distutils.command.build_py import build_py
 from distutils.core import setup
@@ -36,12 +37,18 @@ class TemporaryDirectory(object):
         shutil.rmtree(self.name)
 
 
+def win_path_convert(path: str):
+    if platform.system() == 'Windows':
+        return '/'.join(path.split('\\'))
+    return path
+
+
 def search(content, regexs):
     if isinstance(regexs, str):
-        return re.search(regexs, content)
+        return re.search(win_path_convert(regexs), content)
 
     for regex in regexs:
-        if re.search(regex, content):
+        if re.search(win_path_convert(regex), content):
             return True
 
 
@@ -61,12 +68,12 @@ def copy_files(src_path, dst_path):
         if os.path.exists(dst_path):
             shutil.rmtree(dst_path)
 
-        def callable(src, names: list):
+        def _callable(src, names: list):
             if search(src, dst_path):
                 return names
             return ["dist", ".git", "venv", ".idea", "__pycache__"]
 
-        shutil.copytree(src_path, dst_path, ignore=callable)
+        shutil.copytree(src_path, dst_path, ignore=_callable)
     else:
         if not os.path.exists(dst_path):
             os.makedirs(dst_path)
@@ -78,7 +85,7 @@ def get_py_files(files, ignore_files: Union[List, str, None] = None):
     @summary:
     ---------
     @param files: 文件列表
-    #param ignore_files: 忽略的文件，支持正则
+    @param ignore_files: 忽略的文件，支持正则
     ---------
     @result:
     """
@@ -95,7 +102,7 @@ def filter_cannot_encrypted_py(files, except_main_file):
     过滤掉不能加密的文件，如 log.py __main__.py 以及包含 if __name__ == "__main__": 的文件
     Args:
         files:
-
+        except_main_file:
     Returns:
 
     """
@@ -168,20 +175,20 @@ def rename_excrypted_file(output_file_path):
     files = walk_file(output_file_path)
     for file in files:
         if file.endswith(".pyd") or file.endswith(".so"):
-            new_filename = re.sub("(.*)\..*\.(.*)", r"\1.\2", file)
+            new_filename = re.sub(r"(.*)\..*\.(.*)", r"\1.\2", file)
             os.rename(file, new_filename)
 
 
 def start_encrypt(
-    input_file_path,
-    output_file_path: str = None,
-    ignore_files: Union[List, str, None] = None,
-    except_main_file: int = 1,
+        input_file_path,
+        output_file_path: str = None,
+        ignore_files: Union[List, str, None] = None,
+        except_main_file: int = 1,
 ):
     assert input_file_path, "input_file_path cannot be null"
 
     assert (
-        input_file_path != output_file_path
+            input_file_path != output_file_path
     ), "output_file_path must be diffent with input_file_path"
 
     if output_file_path and os.path.isfile(output_file_path):
@@ -190,7 +197,7 @@ def start_encrypt(
     input_file_path = os.path.abspath(input_file_path)
     if not output_file_path:  # 无输出路径
         if os.path.isdir(
-            input_file_path
+                input_file_path
         ):  # 如果输入路径是文件夹 则输出路径为input_file_path/dist/project_name
             output_file_path = os.path.join(
                 input_file_path, "dist", os.path.basename(input_file_path)
@@ -219,3 +226,7 @@ def start_encrypt(
             len(need_encrypted_py), len(encrypted_py), output_file_path
         )
     )
+    if len(need_encrypted_py) != len(encrypted_py):
+        logger.debug(
+            "失败加密文件：%s", list(set(need_encrypted_py) - set(encrypted_py))
+        )
